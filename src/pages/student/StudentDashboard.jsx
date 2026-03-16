@@ -4,6 +4,7 @@ import useAuth from '../../hooks/useAuth.js';
 
 const initialForm = {
   facultyId: '',
+  subject: '',
   purpose: '',
   targetUniversity: '',
   program: '',
@@ -54,6 +55,7 @@ const StudentDashboard = () => {
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
+  const [downloadingId, setDownloadingId] = useState('');
   const [errors, setErrors] = useState([]);
   const [success, setSuccess] = useState('');
 
@@ -66,8 +68,10 @@ const StudentDashboard = () => {
 
     if (facultyData.length > 0) {
       setForm((prev) => {
-        if (prev.facultyId) return prev;
-        return { ...prev, facultyId: facultyData[0]._id };
+        const nextFacultyId = prev.facultyId || facultyData[0]._id;
+        const selected = facultyData.find((faculty) => faculty._id === nextFacultyId) || facultyData[0];
+        const nextSubject = selected?.subjects?.[0] || '';
+        return { ...prev, facultyId: nextFacultyId, subject: nextSubject };
       });
       return [];
     }
@@ -109,7 +113,14 @@ const StudentDashboard = () => {
   }, []);
 
   const handleChange = (key) => (event) => {
-    setForm((prev) => ({ ...prev, [key]: event.target.value }));
+    const value = event.target.value;
+    setForm((prev) => ({ ...prev, [key]: value }));
+
+    if (key === 'facultyId') {
+      const selected = facultyList.find((faculty) => faculty._id === value);
+      const nextSubject = selected?.subjects?.[0] || '';
+      setForm((prev) => ({ ...prev, facultyId: value, subject: nextSubject }));
+    }
   };
 
   const handleDocument = (event) => {
@@ -140,6 +151,11 @@ const StudentDashboard = () => {
       return;
     }
 
+    if (!form.subject) {
+      setErrors(['Please select a subject for this faculty.']);
+      return;
+    }
+
     if (!form.documentName || !form.documentData) {
       setErrors(['Please upload marksheet or ID card before submitting your request.']);
       return;
@@ -152,7 +168,8 @@ const StudentDashboard = () => {
       setSuccess('LOR request submitted successfully.');
       setForm((prev) => ({
         ...initialForm,
-        facultyId: prev.facultyId || facultyList[0]?._id || ''
+        facultyId: prev.facultyId || facultyList[0]?._id || '',
+        subject: prev.subject || ''
       }));
       await loadStudentRequests();
     } catch (err) {
@@ -161,6 +178,34 @@ const StudentDashboard = () => {
       setSubmitting(false);
     }
   };
+
+  const downloadLetter = async (requestId) => {
+    setDownloadingId(requestId);
+    setErrors([]);
+    setSuccess('');
+
+    try {
+      const response = await api.get(`/lor/student/requests/${requestId}/letter`, {
+        responseType: 'blob'
+      });
+      const file = new Blob([response.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(file);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `lor-${requestId}.pdf`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      setErrors(getErrorMessages(err));
+    } finally {
+      setDownloadingId('');
+    }
+  };
+
+  const selectedFaculty = facultyList.find((faculty) => faculty._id === form.facultyId);
+  const subjectsForFaculty = selectedFaculty?.subjects || [];
 
   return (
     <main className="dashboard-page">
@@ -199,6 +244,19 @@ const StudentDashboard = () => {
               </option>
             ))}
           </select>
+
+          <label className="form-label">Subject</label>
+          <p className="small-text">Required: Choose a subject taught by this faculty.</p>
+          {subjectsForFaculty.length === 0 ? (
+            <p className="small-text">No subjects available yet. Ask the faculty to add subjects.</p>
+          ) : (
+            <select className="form-input" value={form.subject} onChange={handleChange('subject')} required>
+              <option value="">Select subject</option>
+              {subjectsForFaculty.map((subject) => (
+                <option key={subject} value={subject}>{subject}</option>
+              ))}
+            </select>
+          )}
 
           <h4 className="section-title">2. Academic Target</h4>
           <label className="form-label">Target University</label>
@@ -239,7 +297,7 @@ const StudentDashboard = () => {
           <input className="form-input" type="file" accept="image/*,.pdf" onChange={handleDocument} required />
           {form.documentName && <p className="small-text">Selected: {form.documentName}</p>}
 
-          <button className="primary-btn" type="submit" disabled={submitting}>
+          <button className="primary-btn" type="submit" disabled={submitting || subjectsForFaculty.length === 0}>
             {submitting ? 'Submitting...' : 'Submit Request'}
           </button>
         </form>
@@ -254,25 +312,41 @@ const StudentDashboard = () => {
               <thead>
                 <tr>
                   <th>Faculty</th>
+                  <th>Subject</th>
                   <th>University</th>
                   <th>Program</th>
                   <th>Status</th>
                   <th>Remark</th>
+                  <th>Letter</th>
                 </tr>
               </thead>
               <tbody>
                 {requests.length === 0 ? (
                   <tr>
-                    <td colSpan="5">No requests yet.</td>
+                    <td colSpan="7">No requests yet.</td>
                   </tr>
                 ) : (
                   requests.map((request) => (
                     <tr key={request._id}>
                       <td>{request.facultyId?.name || '-'}</td>
+                      <td>{request.subject || '-'}</td>
                       <td>{request.targetUniversity || '-'}</td>
                       <td>{request.program || '-'}</td>
                       <td>{formatStatusLabel(request.status)}</td>
                       <td>{request.facultyRemark || '-'}</td>
+                      <td>
+                        {request.status === 'approved' ? (
+                          <button
+                            className="small-btn"
+                            disabled={downloadingId === request._id}
+                            onClick={() => downloadLetter(request._id)}
+                          >
+                            {downloadingId === request._id ? 'Downloading...' : 'Download'}
+                          </button>
+                        ) : (
+                          <span>-</span>
+                        )}
+                      </td>
                     </tr>
                   ))
                 )}

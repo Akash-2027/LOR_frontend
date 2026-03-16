@@ -29,6 +29,13 @@ const formatStatusLabel = (status) => {
   return 'Pending';
 };
 
+const normalizeSubjects = (subjects) => {
+  if (!Array.isArray(subjects)) return [];
+  return subjects
+    .map((subject) => (typeof subject === 'string' ? subject.trim() : ''))
+    .filter((subject) => subject.length > 0);
+};
+
 const FacultyDashboard = () => {
   const { user, logout } = useAuth();
   const hasLoadedRef = useRef(false);
@@ -36,9 +43,14 @@ const FacultyDashboard = () => {
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(false);
   const [updatingId, setUpdatingId] = useState('');
+  const [previewingId, setPreviewingId] = useState('');
   const [errors, setErrors] = useState([]);
   const [success, setSuccess] = useState('');
   const [remarksById, setRemarksById] = useState({});
+
+  const [subjects, setSubjects] = useState(() => normalizeSubjects(user?.subjects));
+  const [subjectDraft, setSubjectDraft] = useState('');
+  const [savingSubjects, setSavingSubjects] = useState(false);
 
   const pendingCount = useMemo(
     () => requests.filter((request) => request.status === 'pending').length,
@@ -69,6 +81,48 @@ const FacultyDashboard = () => {
     setRemarksById((prev) => ({ ...prev, [requestId]: value }));
   };
 
+  const addSubject = () => {
+    const next = subjectDraft.trim();
+    if (!next) return;
+    setSubjects((prev) => {
+      const merged = [...prev, next];
+      return Array.from(new Set(merged));
+    });
+    setSubjectDraft('');
+  };
+
+  const removeSubject = (subject) => {
+    setSubjects((prev) => prev.filter((item) => item !== subject));
+  };
+
+  const saveSubjects = async () => {
+    setSavingSubjects(true);
+    setErrors([]);
+    setSuccess('');
+
+    try {
+      const response = await api.patch('/auth/faculty/subjects', {
+        subjects
+      });
+
+      const updated = response.data?.data;
+      if (updated?.subjects) {
+        const stored = localStorage.getItem('lor_user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          parsed.subjects = updated.subjects;
+          localStorage.setItem('lor_user', JSON.stringify(parsed));
+        }
+      }
+
+      setSuccess('Subjects updated successfully.');
+    } catch (err) {
+      setErrors(getErrorMessages(err));
+    } finally {
+      setSavingSubjects(false);
+    }
+  };
+
   const changeStatus = async (requestId, status) => {
     setUpdatingId(requestId);
     setErrors([]);
@@ -90,6 +144,26 @@ const FacultyDashboard = () => {
     }
   };
 
+  const previewLetter = async (requestId) => {
+    setPreviewingId(requestId);
+    setErrors([]);
+    setSuccess('');
+
+    try {
+      const response = await api.get(`/lor/faculty/requests/${requestId}/preview`, {
+        responseType: 'blob'
+      });
+      const file = new Blob([response.data], { type: 'application/pdf' });
+      const url = URL.createObjectURL(file);
+      window.open(url, '_blank', 'noopener');
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (err) {
+      setErrors(getErrorMessages(err));
+    } finally {
+      setPreviewingId('');
+    }
+  };
+
   return (
     <main className="dashboard-page">
       <section className="simple-card">
@@ -106,6 +180,38 @@ const FacultyDashboard = () => {
             <p className="info-value">{pendingCount}</p>
           </div>
         </div>
+
+        <h3 className="section-title">My Subjects</h3>
+        <p className="small-text">Add subjects for your profile. Students will pick one when they request an LOR.</p>
+        <div className="form-row">
+          <input
+            className="form-input"
+            placeholder="Add subject"
+            value={subjectDraft}
+            onChange={(event) => setSubjectDraft(event.target.value)}
+          />
+          <button className="small-btn" type="button" onClick={addSubject}>Add</button>
+        </div>
+        {subjects.length === 0 ? (
+          <p className="small-text">No subjects added yet.</p>
+        ) : (
+          <div className="chip-row">
+            {subjects.map((subject) => (
+              <button
+                key={subject}
+                className="chip"
+                type="button"
+                onClick={() => removeSubject(subject)}
+                title="Remove subject"
+              >
+                {subject} ✕
+              </button>
+            ))}
+          </div>
+        )}
+        <button className="primary-btn" type="button" onClick={saveSubjects} disabled={savingSubjects}>
+          {savingSubjects ? 'Saving...' : 'Save Subjects'}
+        </button>
 
         {errors.length > 0 && (
           <ul className="error-list">
@@ -146,6 +252,7 @@ const FacultyDashboard = () => {
                         <div>Enroll: {request.studentId?.enrollment || '-'}</div>
                       </td>
                       <td>
+                        <div>Subject: {request.subject || '-'}</div>
                         <div>University: {request.targetUniversity || '-'}</div>
                         <div>Program: {request.program || '-'}</div>
                         <div>Due: {request.dueDate || '-'}</div>
@@ -179,6 +286,13 @@ const FacultyDashboard = () => {
                               placeholder="Optional remark for student"
                             />
                             <button
+                              className="small-btn"
+                              disabled={previewingId === request._id}
+                              onClick={() => previewLetter(request._id)}
+                            >
+                              {previewingId === request._id ? 'Opening...' : 'Preview'}
+                            </button>
+                            <button
                               className="small-btn approve-btn"
                               disabled={updatingId === request._id}
                               onClick={() => changeStatus(request._id, 'approved')}
@@ -194,7 +308,16 @@ const FacultyDashboard = () => {
                             </button>
                           </div>
                         ) : (
-                          <span>Done</span>
+                          <div className="action-buttons">
+                            <button
+                              className="small-btn"
+                              disabled={previewingId === request._id}
+                              onClick={() => previewLetter(request._id)}
+                            >
+                              {previewingId === request._id ? 'Opening...' : 'Preview'}
+                            </button>
+                            <span>Done</span>
+                          </div>
                         )}
                       </td>
                     </tr>
