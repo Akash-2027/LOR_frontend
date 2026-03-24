@@ -1,6 +1,8 @@
 import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
 import api from '../../lib/api.js';
 import useAuth from '../../hooks/useAuth.js';
+import { fadeUp, tapButton, staggerContainer, rowItem } from '../../lib/motionVariants.js';
 
 const initialForm = {
   facultyId: '',
@@ -297,9 +299,9 @@ const StudentDashboard = () => {
           <input className="form-input" type="file" accept="image/*,.pdf" onChange={handleDocument} required />
           {form.documentName && <p className="small-text">Selected: {form.documentName}</p>}
 
-          <button className="primary-btn" type="submit" disabled={submitting || subjectsForFaculty.length === 0}>
+          <motion.button className="primary-btn" type="submit" disabled={submitting || subjectsForFaculty.length === 0} {...tapButton}>
             {submitting ? 'Submitting...' : 'Submit Request'}
-          </button>
+          </motion.button>
         </form>
 
         <h3 className="section-title">My Requests</h3>
@@ -327,7 +329,7 @@ const StudentDashboard = () => {
                   </tr>
                 ) : (
                   requests.map((request) => (
-                    <tr key={request._id}>
+                    <motion.tr key={request._id} {...rowItem}>
                       <td>{request.facultyId?.name || '-'}</td>
                       <td>{request.subject || '-'}</td>
                       <td>{request.targetUniversity || '-'}</td>
@@ -336,18 +338,19 @@ const StudentDashboard = () => {
                       <td>{request.facultyRemark || '-'}</td>
                       <td>
                         {request.status === 'approved' ? (
-                          <button
+                          <motion.button
                             className="small-btn"
                             disabled={downloadingId === request._id}
                             onClick={() => downloadLetter(request._id)}
+                            {...tapButton}
                           >
                             {downloadingId === request._id ? 'Downloading...' : 'Download'}
-                          </button>
+                          </motion.button>
                         ) : (
                           <span>-</span>
                         )}
                       </td>
-                    </tr>
+                    </motion.tr>
                   ))
                 )}
               </tbody>
@@ -355,7 +358,7 @@ const StudentDashboard = () => {
           </div>
         )}
 
-        <button className="primary-btn" onClick={logout}>Logout</button>
+        <motion.button className="primary-btn" onClick={logout} {...tapButton}>Logout</motion.button>
       </section>
     </main>
   );
