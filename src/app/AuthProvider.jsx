@@ -1,4 +1,4 @@
-import { createContext, useCallback, useMemo, useState } from 'react';
+import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
 
 export const AuthContext = createContext(null);
 
@@ -40,6 +40,19 @@ const AuthProvider = ({ children }) => {
     setRole(null);
     setUser(null);
   }, []);
+
+  // On mount: if a token exists but is expired or malformed, clear it immediately
+  useEffect(() => {
+    if (!token) return;
+    try {
+      const payload = JSON.parse(atob(token.split('.')[1]));
+      if (payload.exp && payload.exp * 1000 < Date.now()) {
+        logout();
+      }
+    } catch {
+      logout(); // malformed token — clear it
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const value = useMemo(
     () => ({

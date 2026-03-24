@@ -17,4 +17,18 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
+// If the server returns 401 (expired/invalid token), wipe local auth and redirect to login
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (error.response?.status === 401) {
+      localStorage.removeItem('lor_token');
+      localStorage.removeItem('lor_role');
+      localStorage.removeItem('lor_user');
+      window.location.href = '/auth';
+    }
+    return Promise.reject(error);
+  }
+);
+
 export default api;
