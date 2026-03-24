@@ -14,3 +14,11 @@ export const listAdminLorRequests = () => api.get('/auth/admin/lor-requests');
 
 export const forgotPassword = (payload) => api.post('/auth/password/forgot', payload);
 export const resetPassword = (payload) => api.post('/auth/password/reset', payload);
+
+export const rejectFaculty = (facultyId) => api.patch(`/auth/admin/faculties/${facultyId}/reject`);
+export const toggleFacultyActive = (facultyId) => api.patch(`/auth/admin/faculties/${facultyId}/toggle-active`);
+export const deleteFaculty = (facultyId) => api.delete(`/auth/admin/faculties/${facultyId}`);
+
+export const cancelLorRequest = (requestId) => api.patch(`/lor/admin/${requestId}/cancel`);
+export const reassignLorRequest = (requestId, facultyId) => api.patch(`/lor/admin/${requestId}/reassign`, { facultyId });
+export const deleteLorRequest = (requestId) => api.delete(`/lor/admin/${requestId}`);
