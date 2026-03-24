@@ -1,5 +1,7 @@
 import { useState } from 'react';
 import { Navigate, useNavigate } from 'react-router-dom';
+import { motion } from 'motion/react';
+import { fadeUp, tapButton } from '../lib/motionVariants.js';
 import useAuth from '../hooks/useAuth.js';
 import { getDashboardPath, mapAuthPayload } from '../features/auth/utils/authHelpers.js';
 import {
@@ -17,6 +19,7 @@ const emptyForm = {
   password: '',
   enrollment: '',
   mobile: '',
+  govtId: '',
   collegeEmail: '',
   department: ''
 };
@@ -68,7 +71,8 @@ const AuthGateway = () => {
           email: form.email,
           password: form.password,
           enrollment: form.enrollment,
-          mobile: form.mobile
+          mobile: form.mobile,
+          govtId: form.govtId
         });
 
         const payload = mapAuthPayload(response.data.data, 'student');
@@ -127,7 +131,7 @@ const AuthGateway = () => {
         <div className="auth-visual">
           <img src={vectorImage} alt="LOR illustration" />
         </div>
-        <section className="auth-card">
+        <motion.section className="auth-card" {...fadeUp}>
           <h2>{isRegister ? 'Register' : 'Login'} ({role})</h2>
 
           <label className="form-label" htmlFor="role-select">Select Role</label>
@@ -154,6 +158,15 @@ const AuthGateway = () => {
 
                 <label className="form-label">Mobile</label>
                 <input className="form-input" value={form.mobile} onChange={handleChange('mobile')} required />
+
+                <label className="form-label">Govt ID (Aadhaar / PAN)</label>
+                <input
+                  className="form-input"
+                  value={form.govtId}
+                  onChange={handleChange('govtId')}
+                  placeholder="12-digit Aadhaar or PAN (e.g. ABCDE1234F)"
+                  required
+                />
               </>
             )}
 
@@ -176,18 +189,18 @@ const AuthGateway = () => {
             {error && <p className="form-error">{error}</p>}
             {success && <p className="form-success">{success}</p>}
 
-            <button className="primary-btn" type="submit" disabled={loading}>
+            <motion.button className="primary-btn" type="submit" disabled={loading} {...tapButton}>
               {loading ? 'Please wait...' : isRegister ? 'Sign Up' : 'Login'}
-            </button>
+            </motion.button>
           </form>
 
           <p className="mode-link-row">
             {isRegister ? 'Already registered?' : 'Not registered?'}{' '}
-            <button type="button" className="mode-link-btn" onClick={toggleMode}>
+            <motion.button type="button" className="mode-link-btn" onClick={toggleMode} {...tapButton}>
               {isRegister ? 'Login' : 'Sign Up'}
-            </button>
+            </motion.button>
           </p>
-        </section>
+        </motion.section>
       </div>
     </PublicLayout>
   );
