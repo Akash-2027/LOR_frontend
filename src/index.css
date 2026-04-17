@@ -91,24 +91,65 @@ body {
 .main-content {
   width: 100%;
   max-width: 1200px;
-  margin: 24px auto;
+  margin: 0 auto;
   padding: 0 16px;
   flex: 1;
+  display: flex;
+  flex-direction: column;
 }
 
 .auth-layout {
-  min-height: 520px;
+  width: 100%;
+  flex: 1;
   display: grid;
   grid-template-columns: 1fr 420px;
   align-items: center;
-  gap: 24px;
+  gap: 0;
+  min-height: calc(100vh - 110px);
 }
 
 .auth-visual {
-  height: 100%;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 20px;
+  padding: 48px 40px;
+  background-image:
+    linear-gradient(90deg, rgba(79, 98, 91, 0.045) 1px, transparent 1px),
+    linear-gradient(rgba(79, 98, 91, 0.045) 1px, transparent 1px);
+  background-size: 40px 40px;
+  border-right: 1px solid var(--border);
+}
+
+.auth-visual-text {
+  text-align: center;
+  max-width: 360px;
+}
+
+.auth-visual-text h2 {
+  margin: 0 0 8px;
+  font-family: 'Manrope', sans-serif;
+  font-size: 22px;
+  font-weight: 700;
+  color: var(--text);
+  letter-spacing: -0.3px;
+}
+
+.auth-visual-text p {
+  margin: 0;
+  font-size: 14px;
+  color: var(--muted);
+  line-height: 1.6;
+}
+
+.auth-form-side {
   display: flex;
   align-items: center;
   justify-content: center;
+  padding: 40px 32px;
+  align-self: stretch;
 }
 
 .auth-visual img {
@@ -579,6 +620,38 @@ html {
   margin: 0;
   font-size: 13px;
   color: var(--muted);
+}
+
+.input-with-counter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.char-counter {
+  font-size: 11px;
+  text-align: right;
+  color: var(--muted);
+  user-select: none;
+}
+
+.edit-badge {
+  display: inline-block;
+  margin-left: 8px;
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 1px 7px;
+  border-radius: 20px;
+  background: #e8f4fd;
+  color: #1a73e8;
+  vertical-align: middle;
+  text-transform: uppercase;
+}
+
+.edit-badge.edited-badge {
+  background: #fef9e7;
+  color: #c5a059;
 }
 
 .error-list {
@@ -1081,4 +1154,50 @@ html {
   font-size: 11px;
   color: var(--muted);
   margin-top: 2px;
+}
+
+/* ── Loading spinner ────────────────────────────────────────────── */
+
+.spinner {
+  width: 32px;
+  height: 32px;
+  border: 3px solid var(--accent-soft);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ── Mobile (480px) ─────────────────────────────────────────────── */
+
+@media (max-width: 480px) {
+  .simple-card {
+    padding: 16px;
+    border-radius: 12px;
+  }
+
+  .dashboard-info-row {
+    flex-direction: column;
+  }
+
+  .info-box {
+    width: 100%;
+  }
+
+  .simple-table th,
+  .simple-table td {
+    font-size: 12px;
+    padding: 8px 6px;
+  }
+
+  .auth-form {
+    gap: 10px;
+  }
+
+  .primary-btn {
+    width: 100%;
+  }
 }

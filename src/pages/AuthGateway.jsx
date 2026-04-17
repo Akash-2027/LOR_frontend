@@ -1,4 +1,5 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { z } from 'zod';
 import { Navigate, useNavigate } from 'react-router-dom';
 import { motion } from 'motion/react';
 import { fadeUp, tapButton } from '../lib/motionVariants.js';
@@ -10,8 +11,51 @@ import {
   registerFaculty,
   registerStudent
 } from '../features/auth/auth.api.js';
+import api from '../lib/api.js';
 import PublicLayout from '../components/site/PublicLayout.jsx';
 import vectorImage from '../../assets/vector_image.png';
+
+// ── Client-side validation schemas ───────────────────────────────────────────
+const strongPassword = z.string()
+  .min(8, 'Password must be at least 8 characters')
+  .regex(/[A-Z]/, 'Password must contain at least one uppercase letter')
+  .regex(/\d/, 'Password must contain at least one number')
+  .regex(/[!@#$%^&*()_+\-=[\]{};':"\\|,.<>/?]/, 'Password must contain at least one special character');
+
+const loginSchema = z.object({
+  email: z.string().email('Enter a valid email address'),
+  password: z.string().min(1, 'Password is required')
+});
+
+const studentRegisterSchema = z.object({
+  name:       z.string().min(2, 'Name must be at least 2 characters'),
+  email:      z.string().email('Enter a valid email address'),
+  password:   strongPassword,
+  enrollment: z.string().min(3, 'Enrollment ID must be at least 3 characters'),
+  mobile:     z.string().min(7, 'Mobile number must be at least 7 digits'),
+  govtId:     z.string().refine(
+    (v) => /^\d{12}$/.test(v) || /^[A-Z]{5}\d{4}[A-Z]$/.test(v.toUpperCase()),
+    { message: 'Enter a valid 12-digit Aadhaar or PAN (e.g. ABCDE1234F)' }
+  )
+});
+
+const facultyRegisterSchema = z.object({
+  name:         z.string().min(2, 'Name must be at least 2 characters'),
+  email:        z.string().email('Enter a valid personal email address'),
+  collegeEmail: z.string().email('Enter a valid college email address'),
+  department:   z.string().min(2, 'Department must be at least 2 characters'),
+  mobile:       z.string().min(7, 'Mobile number must be at least 7 digits').optional().or(z.literal('')),
+  password:     strongPassword
+});
+
+const validate = (schema, data) => {
+  const result = schema.safeParse(data);
+  if (!result.success) {
+    const messages = result.error.errors.map((e) => e.message);
+    return messages[0]; // return first error message
+  }
+  return null;
+};
 
 const emptyForm = {
   name: '',
@@ -34,6 +78,19 @@ const AuthGateway = () => {
   const [error, setError] = useState('');
   const [success, setSuccess] = useState('');
   const [form, setForm] = useState(emptyForm);
+
+  // Fetch CSRF token on page load — must be before any early returns (Rules of Hooks)
+  useEffect(() => {
+    const fetchCsrfToken = async () => {
+      try {
+        await api.get('/csrf-token');
+        // Token is automatically stored in localStorage by the response interceptor
+      } catch (err) {
+        console.error('Failed to fetch CSRF token:', err);
+      }
+    };
+    fetchCsrfToken();
+  }, []);
 
   if (auth.isAuthenticated) {
     return <Navigate to={getDashboardPath(auth.role)} replace />;
@@ -60,9 +117,24 @@ const AuthGateway = () => {
 
   const handleSubmit = async (event) => {
     event.preventDefault();
-    setLoading(true);
     setError('');
     setSuccess('');
+
+    // Client-side validation before hitting the API
+    let validationError = null;
+    if (role === 'student' && isRegister) {
+      validationError = validate(studentRegisterSchema, form);
+    } else if (role === 'faculty' && isRegister) {
+      validationError = validate(facultyRegisterSchema, form);
+    } else {
+      validationError = validate(loginSchema, { email: form.email, password: form.password });
+    }
+    if (validationError) {
+      setError(validationError);
+      return;
+    }
+
+    setLoading(true);
 
     try {
       if (role === 'student' && isRegister) {
@@ -130,7 +202,12 @@ const AuthGateway = () => {
       <div className="auth-layout">
         <div className="auth-visual">
           <img src={vectorImage} alt="LOR illustration" />
+          <div className="auth-visual-text">
+            <h2>LOR Management Portal</h2>
+            <p>Request, review, and issue Letters of Recommendation — all in one place for students and faculty of GEC Modasa.</p>
+          </div>
         </div>
+        <div className="auth-form-side">
         <motion.section className="auth-card" {...fadeUp}>
           <h2>{isRegister ? 'Register' : 'Login'} ({role})</h2>
 
@@ -201,6 +278,7 @@ const AuthGateway = () => {
             </motion.button>
           </p>
         </motion.section>
+        </div>
       </div>
     </PublicLayout>
   );
