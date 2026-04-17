@@ -2,7 +2,9 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import api from '../../lib/api.js';
 import useAuth from '../../hooks/useAuth.js';
+import { updateFacultyProfile } from '../../features/auth/auth.api.js';
 import { tapButton, rowItem } from '../../lib/motionVariants.js';
+import LoadingSpinner from '../../components/LoadingSpinner.jsx';
 
 const getErrorMessages = (err) => {
   const data = err?.response?.data;
@@ -51,9 +53,21 @@ const FacultyDashboard = () => {
   const [success, setSuccess] = useState('');
   const [remarksById, setRemarksById] = useState({});
 
+  const [editContentById, setEditContentById] = useState({});
+  const [savingContentId, setSavingContentId] = useState('');
+
   const [subjects, setSubjects] = useState(() => normalizeSubjects(user?.subjects));
   const [subjectDraft, setSubjectDraft] = useState('');
   const [savingSubjects, setSavingSubjects] = useState(false);
+
+  // Profile edit state
+  const [profileEdit, setProfileEdit] = useState(false);
+  const [profileForm, setProfileForm] = useState({
+    name: user?.name || '',
+    mobile: user?.mobile || '',
+    collegeEmail: user?.collegeEmail || ''
+  });
+  const [savingProfile, setSavingProfile] = useState(false);
 
   const pendingCount = useMemo(
     () => requests.filter((request) => request.status === 'pending').length,
@@ -80,8 +94,61 @@ const FacultyDashboard = () => {
     loadRequests();
   }, []);
 
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(''), 4000);
+    return () => clearTimeout(timer);
+  }, [success]);
+
   const setRemark = (requestId, value) => {
     setRemarksById((prev) => ({ ...prev, [requestId]: value }));
+  };
+
+  const initEditContent = (request) => {
+    setEditContentById((prev) => ({
+      ...prev,
+      [request._id]: {
+        achievements: request.achievements || '',
+        lorRequirements: request.lorRequirements || '',
+        editing: true
+      }
+    }));
+  };
+
+  const setEditField = (requestId, field, value) => {
+    setEditContentById((prev) => ({
+      ...prev,
+      [requestId]: { ...prev[requestId], [field]: value }
+    }));
+  };
+
+  const cancelEditContent = (requestId) => {
+    setEditContentById((prev) => {
+      const next = { ...prev };
+      delete next[requestId];
+      return next;
+    });
+  };
+
+  const saveEditContent = async (requestId) => {
+    const draft = editContentById[requestId];
+    if (!draft) return;
+    setSavingContentId(requestId);
+    setErrors([]);
+    setSuccess('');
+    try {
+      await api.patch(`/lor/faculty/requests/${requestId}/content`, {
+        achievements: draft.achievements,
+        lorRequirements: draft.lorRequirements
+      });
+      setSuccess('Content updated. You can now approve the request.');
+      cancelEditContent(requestId);
+      await loadRequests();
+    } catch (err) {
+      setErrors(getErrorMessages(err));
+    } finally {
+      setSavingContentId('');
+    }
   };
 
   const addSubject = () => {
@@ -123,6 +190,41 @@ const FacultyDashboard = () => {
       setErrors(getErrorMessages(err));
     } finally {
       setSavingSubjects(false);
+    }
+  };
+
+  const saveProfile = async () => {
+    const payload = {};
+    if (profileForm.name.trim()   !== (user?.name   || '')) payload.name   = profileForm.name.trim();
+    if (profileForm.mobile.trim() !== (user?.mobile || '')) payload.mobile = profileForm.mobile.trim();
+
+    if (Object.keys(payload).length === 0) {
+      setProfileEdit(false);
+      return;
+    }
+
+    setSavingProfile(true);
+    setErrors([]);
+    setSuccess('');
+
+    try {
+      const res = await updateFacultyProfile(payload);
+      const updated = res.data?.data;
+      if (updated) {
+        const stored = localStorage.getItem('lor_user');
+        if (stored) {
+          const parsed = JSON.parse(stored);
+          Object.assign(parsed, { name: updated.name, mobile: updated.mobile });
+          localStorage.setItem('lor_user', JSON.stringify(parsed));
+        }
+        setProfileForm({ name: updated.name || '', mobile: updated.mobile || '', collegeEmail: updated.collegeEmail || user?.collegeEmail || '' });
+      }
+      setSuccess('Profile updated successfully.');
+      setProfileEdit(false);
+    } catch (err) {
+      setErrors(getErrorMessages(err));
+    } finally {
+      setSavingProfile(false);
     }
   };
 
@@ -184,6 +286,68 @@ const FacultyDashboard = () => {
           </div>
         </div>
 
+        <h3 className="section-title">My Profile</h3>
+        <div className="subjects-card">
+          {!profileEdit ? (
+            <>
+              <div className="req-detail-grid" style={{ marginBottom: '12px' }}>
+                <div className="req-detail-group">
+                  <p className="req-detail-label">Name</p>
+                  <p className="req-detail-value">{profileForm.name || '-'}</p>
+                </div>
+                <div className="req-detail-group">
+                  <p className="req-detail-label">Login Email</p>
+                  <p className="req-detail-value" style={{ color: 'var(--muted)', fontSize: '13px' }}>{user?.email || '-'} <span style={{ fontSize: '11px' }}>(admin only)</span></p>
+                </div>
+                <div className="req-detail-group">
+                  <p className="req-detail-label">College Email</p>
+                  <p className="req-detail-value">{profileForm.collegeEmail || '-'}</p>
+                </div>
+                <div className="req-detail-group">
+                  <p className="req-detail-label">Mobile</p>
+                  <p className="req-detail-value">{profileForm.mobile || '-'}</p>
+                </div>
+                <div className="req-detail-group">
+                  <p className="req-detail-label">Department</p>
+                  <p className="req-detail-value" style={{ color: 'var(--muted)', fontSize: '13px' }}>{user?.department || '-'} <span style={{ fontSize: '11px' }}>(admin only)</span></p>
+                </div>
+              </div>
+              <motion.button className="small-btn" type="button" onClick={() => setProfileEdit(true)} {...tapButton}>
+                Edit Profile
+              </motion.button>
+            </>
+          ) : (
+            <>
+              <div className="form-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginBottom: '14px' }}>
+                <div>
+                  <label className="form-label">Name</label>
+                  <input
+                    className="form-input"
+                    value={profileForm.name}
+                    onChange={(e) => setProfileForm((p) => ({ ...p, name: e.target.value }))}
+                  />
+                </div>
+                <div>
+                  <label className="form-label">Mobile</label>
+                  <input
+                    className="form-input"
+                    value={profileForm.mobile}
+                    onChange={(e) => setProfileForm((p) => ({ ...p, mobile: e.target.value }))}
+                  />
+                </div>
+              </div>
+              <div className="action-buttons">
+                <motion.button className="small-btn approve-btn" type="button" onClick={saveProfile} disabled={savingProfile} {...tapButton}>
+                  {savingProfile ? 'Saving...' : 'Save'}
+                </motion.button>
+                <motion.button className="small-btn" type="button" onClick={() => setProfileEdit(false)} disabled={savingProfile} {...tapButton}>
+                  Cancel
+                </motion.button>
+              </div>
+            </>
+          )}
+        </div>
+
         <h3 className="section-title">My Subjects</h3>
         <div className="subjects-card">
           <p className="small-text">Add subjects you teach. Students will pick one when requesting an LOR.</p>
@@ -231,7 +395,7 @@ const FacultyDashboard = () => {
         {success && <p className="form-success">{success}</p>}
 
         {loading ? (
-          <p>Loading requests...</p>
+          <LoadingSpinner message="Loading requests..." />
         ) : (
           <div className="table-wrap">
             <table className="simple-table">
@@ -246,7 +410,9 @@ const FacultyDashboard = () => {
               <tbody>
                 {requests.length === 0 ? (
                   <tr>
-                    <td colSpan="4">No student requests available.</td>
+                    <td colSpan="4" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
+                      No student requests yet. Students will appear here once they submit an LOR request.
+                    </td>
                   </tr>
                 ) : (
                   requests.map((request) => {
@@ -322,14 +488,81 @@ const FacultyDashboard = () => {
                                   <p className="req-detail-label">Purpose</p>
                                   <p className="req-detail-value">{request.purpose || '-'}</p>
                                 </div>
-                                <div className="req-detail-group req-detail-wide">
-                                  <p className="req-detail-label">Achievements</p>
-                                  <p className="req-detail-value">{request.achievements || '-'}</p>
-                                </div>
-                                <div className="req-detail-group req-detail-wide">
-                                  <p className="req-detail-label">Need in Letter</p>
-                                  <p className="req-detail-value">{request.lorRequirements || '-'}</p>
-                                </div>
+                                {(() => {
+                                  const draft = editContentById[request._id];
+                                  if (isPending && draft?.editing) {
+                                    return (
+                                      <>
+                                        <div className="req-detail-group req-detail-wide">
+                                          <p className="req-detail-label">
+                                            Achievements
+                                            <span className="edit-badge">Editing</span>
+                                          </p>
+                                          <textarea
+                                            className="form-input textarea-input"
+                                            value={draft.achievements}
+                                            onChange={(e) => setEditField(request._id, 'achievements', e.target.value)}
+                                            maxLength={600}
+                                          />
+                                          <span className="char-counter" style={{ color: 'var(--muted)' }}>
+                                            {600 - (draft.achievements?.length || 0)} chars left
+                                          </span>
+                                        </div>
+                                        <div className="req-detail-group req-detail-wide">
+                                          <p className="req-detail-label">
+                                            Need in Letter
+                                            <span className="edit-badge">Editing</span>
+                                          </p>
+                                          <textarea
+                                            className="form-input textarea-input"
+                                            value={draft.lorRequirements}
+                                            onChange={(e) => setEditField(request._id, 'lorRequirements', e.target.value)}
+                                            maxLength={500}
+                                          />
+                                          <span className="char-counter" style={{ color: 'var(--muted)' }}>
+                                            {500 - (draft.lorRequirements?.length || 0)} chars left
+                                          </span>
+                                        </div>
+                                        <div className="action-buttons" style={{ marginBottom: '12px' }}>
+                                          <motion.button
+                                            className="small-btn approve-btn"
+                                            disabled={savingContentId === request._id}
+                                            onClick={() => saveEditContent(request._id)}
+                                            {...tapButton}
+                                          >
+                                            {savingContentId === request._id ? 'Saving...' : 'Save Changes'}
+                                          </motion.button>
+                                          <motion.button
+                                            className="small-btn"
+                                            disabled={savingContentId === request._id}
+                                            onClick={() => cancelEditContent(request._id)}
+                                            {...tapButton}
+                                          >
+                                            Cancel
+                                          </motion.button>
+                                        </div>
+                                      </>
+                                    );
+                                  }
+                                  return (
+                                    <>
+                                      <div className="req-detail-group req-detail-wide">
+                                        <p className="req-detail-label">
+                                          Achievements
+                                          {request.facultyEditedAt && <span className="edit-badge edited-badge">Faculty Edited</span>}
+                                        </p>
+                                        <p className="req-detail-value">{request.achievements || '-'}</p>
+                                      </div>
+                                      <div className="req-detail-group req-detail-wide">
+                                        <p className="req-detail-label">
+                                          Need in Letter
+                                          {request.facultyEditedAt && <span className="edit-badge edited-badge">Faculty Edited</span>}
+                                        </p>
+                                        <p className="req-detail-value">{request.lorRequirements || '-'}</p>
+                                      </div>
+                                    </>
+                                  );
+                                })()}
                                 {!isPending && request.facultyRemark && (
                                   <div className="req-detail-group req-detail-wide">
                                     <p className="req-detail-label">Your Remark</p>
@@ -337,13 +570,25 @@ const FacultyDashboard = () => {
                                   </div>
                                 )}
                               </div>
-                              {isPending && (
+                              {isPending && !editContentById[request._id]?.editing && (
                                 <div className="req-expand-actions">
+                                  <div style={{ marginBottom: '10px' }}>
+                                    <motion.button
+                                      className="small-btn"
+                                      onClick={() => initEditContent(request)}
+                                      {...tapButton}
+                                    >
+                                      Edit Content
+                                    </motion.button>
+                                    <span className="small-text" style={{ marginLeft: '10px', color: 'var(--muted)' }}>
+                                      Review and correct student's achievements / LOR details before approving.
+                                    </span>
+                                  </div>
                                   <textarea
                                     className="form-input textarea-input"
                                     value={remarksById[request._id] || ''}
                                     onChange={(event) => setRemark(request._id, event.target.value)}
-                                    placeholder="Optional remark for student"
+                                    placeholder="Optional remark for student (visible after decision)"
                                   />
                                   <div className="action-buttons">
                                     <motion.button
