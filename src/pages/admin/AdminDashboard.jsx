@@ -2,7 +2,10 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import useAuth from '../../hooks/useAuth.js';
 import { tapButton, dropDown, rowItem } from '../../lib/motionVariants.js';
+import LoadingSpinner from '../../components/LoadingSpinner.jsx';
+import api from '../../lib/api.js';
 import {
+  adminUpdateFacultyProfile,
   approveFaculty,
   cancelLorRequest,
   deleteFaculty,
@@ -14,6 +17,129 @@ import {
   rejectFaculty,
   toggleFacultyActive
 } from '../../features/auth/auth.api.js';
+
+// ── Letter Options Config Section ─────────────────────────────────
+const LetterOptionsSection = ({ notify, setError }) => {
+  const [purposes, setPurposes] = useState([]);
+  const [programs, setPrograms] = useState([]);
+  const [purposeDraft, setPurposeDraft] = useState('');
+  const [programDraft, setProgramDraft] = useState('');
+  const [saving, setSaving] = useState(false);
+  const [loaded, setLoaded] = useState(false);
+
+  useEffect(() => {
+    api.get('/lor/config').then((res) => {
+      const cfg = res.data.data || {};
+      setPurposes(cfg.purposes || []);
+      setPrograms(cfg.programs || []);
+      setLoaded(true);
+    }).catch(() => setLoaded(true));
+  }, []);
+
+  const addItem = (list, setList, draft, setDraft) => {
+    const val = draft.trim();
+    if (!val) return;
+    if (!list.includes(val)) setList((prev) => [...prev, val]);
+    setDraft('');
+  };
+
+  const removeItem = (list, setList, item) => {
+    setList((prev) => prev.filter((v) => v !== item));
+  };
+
+  const saveConfig = async () => {
+    setSaving(true);
+    try {
+      await api.patch('/lor/admin/config', { purposes, programs });
+      notify('Letter options saved.');
+    } catch (err) {
+      setError(err?.response?.data?.message || 'Failed to save config');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  if (!loaded) return null;
+
+  return (
+    <section id="letter-options" className="admin-card" style={{ marginTop: '32px' }}>
+      <div className="admin-section-head">
+        <h3 className="section-title">Letter Options</h3>
+        <span className="admin-pill">Admin Config</span>
+      </div>
+      <p style={{ fontSize: '13px', color: 'var(--muted)', marginBottom: '20px' }}>
+        Manage the dropdown choices shown to students when submitting LOR requests.
+        Students cannot submit freeform text for purpose or program — they must pick from these lists.
+      </p>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '24px' }}>
+        <div>
+          <h4 className="section-title" style={{ marginBottom: '10px' }}>Purpose Options</h4>
+          <div className="form-row">
+            <input
+              className="form-input"
+              placeholder="e.g. Scholarship Application"
+              value={purposeDraft}
+              onChange={(e) => setPurposeDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(purposes, setPurposes, purposeDraft, setPurposeDraft); } }}
+            />
+            <button className="add-btn" type="button" onClick={() => addItem(purposes, setPurposes, purposeDraft, setPurposeDraft)}>+ Add</button>
+          </div>
+          {purposes.length === 0 ? (
+            <p className="subjects-empty">No purpose options yet.</p>
+          ) : (
+            <div className="chip-row">
+              {purposes.map((item) => (
+                <button key={item} className="chip" type="button" onClick={() => removeItem(purposes, setPurposes, item)} title="Click to remove">
+                  {item}<span className="chip-x">✕</span>
+                </button>
+              ))}
+            </div>
+          )}
+          <p className="small-text" style={{ marginTop: '6px' }}>
+            Always include an "Other" option so students can write a custom purpose.
+          </p>
+        </div>
+
+        <div>
+          <h4 className="section-title" style={{ marginBottom: '10px' }}>Program Options</h4>
+          <div className="form-row">
+            <input
+              className="form-input"
+              placeholder="e.g. M.Tech"
+              value={programDraft}
+              onChange={(e) => setProgramDraft(e.target.value)}
+              onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addItem(programs, setPrograms, programDraft, setProgramDraft); } }}
+            />
+            <button className="add-btn" type="button" onClick={() => addItem(programs, setPrograms, programDraft, setProgramDraft)}>+ Add</button>
+          </div>
+          {programs.length === 0 ? (
+            <p className="subjects-empty">No program options yet.</p>
+          ) : (
+            <div className="chip-row">
+              {programs.map((item) => (
+                <button key={item} className="chip" type="button" onClick={() => removeItem(programs, setPrograms, item)} title="Click to remove">
+                  {item}<span className="chip-x">✕</span>
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+
+      <motion.button
+        className="primary-btn"
+        type="button"
+        style={{ marginTop: '20px' }}
+        onClick={saveConfig}
+        disabled={saving}
+        {...tapButton}
+      >
+        {saving ? 'Saving...' : 'Save Letter Options'}
+      </motion.button>
+    </section>
+  );
+};
 
 const getErrorMessage = (err) => {
   return err?.response?.data?.message || err?.response?.data?.error || err?.message || 'Request failed';
@@ -72,8 +198,14 @@ const AdminDashboard = () => {
   const [confirmDeleteFacultyId, setConfirmDeleteFacultyId] = useState('');
   const [openFacultyMenuId, setOpenFacultyMenuId] = useState('');
 
+  // Edit faculty modal state
+  const [editFacultyTarget, setEditFacultyTarget] = useState(null); // faculty object or null
+  const [editFacultyForm, setEditFacultyForm] = useState({ email: '', department: '', name: '', mobile: '', collegeEmail: '' });
+  const [savingFacultyEdit, setSavingFacultyEdit] = useState(false);
+
   // LOR filter + action states
   const [lorFilter, setLorFilter] = useState('all');
+  const [exportFilter, setExportFilter] = useState('all');
   const [cancellingId, setCancellingId] = useState('');
   const [deletingLorId, setDeletingLorId] = useState('');
   const [confirmDeleteLorId, setConfirmDeleteLorId] = useState('');
@@ -201,7 +333,13 @@ const AdminDashboard = () => {
   }, [lorRequests]);
 
   const handleExport = () => {
-    downloadCsv('lor_admin_report.csv', filteredLorRequests.map((request) => ({
+    let toExport = filteredLorRequests;
+    if (exportFilter === 'pending') {
+      toExport = toExport.filter((r) => r.status === 'pending');
+    } else if (exportFilter === 'approved') {
+      toExport = toExport.filter((r) => r.status === 'approved');
+    }
+    downloadCsv('lor_admin_report.csv', toExport.map((request) => ({
       student: request.studentId?.name || '',
       faculty: request.facultyId?.name || '',
       university: request.targetUniversity || '',
@@ -223,9 +361,10 @@ const AdminDashboard = () => {
         listAdminLorRequests()
       ]);
 
-      setStudents(studentsRes.data.data || []);
-      setFaculties(facultiesRes.data.data || []);
-      setLorRequests(lorRequestsRes.data.data || []);
+      // Students/faculties now return { data: [...], total, page, limit }
+      setStudents(studentsRes.data.data?.data ?? studentsRes.data.data ?? []);
+      setFaculties(facultiesRes.data.data?.data ?? facultiesRes.data.data ?? []);
+      setLorRequests((lorRequestsRes.data.data?.data ?? lorRequestsRes.data.data) || []);
     } catch (err) {
       setError(getErrorMessage(err));
     } finally {
@@ -378,12 +517,48 @@ const AdminDashboard = () => {
     }
   };
 
+  const openEditFaculty = (faculty) => {
+    setEditFacultyTarget(faculty);
+    setEditFacultyForm({
+      email:        faculty.email        || '',
+      department:   faculty.department   || '',
+      name:         faculty.name         || '',
+      mobile:       faculty.mobile       || '',
+      collegeEmail: faculty.collegeEmail || ''
+    });
+  };
+
+  const onSaveFacultyEdit = async () => {
+    if (!editFacultyTarget) return;
+    const payload = {};
+    if (editFacultyForm.email.trim()        !== (editFacultyTarget.email        || '')) payload.email        = editFacultyForm.email.trim();
+    if (editFacultyForm.department.trim()   !== (editFacultyTarget.department   || '')) payload.department   = editFacultyForm.department.trim();
+    if (editFacultyForm.name.trim()         !== (editFacultyTarget.name         || '')) payload.name         = editFacultyForm.name.trim();
+    if (editFacultyForm.mobile.trim()       !== (editFacultyTarget.mobile       || '')) payload.mobile       = editFacultyForm.mobile.trim();
+    if (editFacultyForm.collegeEmail.trim() !== (editFacultyTarget.collegeEmail || '')) payload.collegeEmail = editFacultyForm.collegeEmail.trim();
+
+    if (Object.keys(payload).length === 0) { setEditFacultyTarget(null); return; }
+
+    setSavingFacultyEdit(true);
+    setError('');
+    try {
+      await adminUpdateFacultyProfile(editFacultyTarget._id, payload);
+      notify('Faculty profile updated.');
+      setEditFacultyTarget(null);
+      await loadDashboardData();
+    } catch (err) {
+      setError(getErrorMessage(err));
+    } finally {
+      setSavingFacultyEdit(false);
+    }
+  };
+
   return (
     <main className="admin-dashboard">
       <div className="admin-layout">
         <aside className="admin-sidebar">
           <div className="admin-brand">
-            <h3>The Digital Atelier</h3>
+            <h3>LOR Management</h3>
             <p>Academic Year {new Date().getFullYear()}</p>
           </div>
           <nav className="admin-nav">
@@ -399,6 +574,7 @@ const AdminDashboard = () => {
             </a>
             <a href="#students" className={`admin-nav-link ${activeSection === 'students' ? 'active' : ''}`}>Students</a>
             <a href="#lor" className={`admin-nav-link ${activeSection === 'lor' ? 'active' : ''}`}>LOR Requests</a>
+            <a href="#letter-options" className={`admin-nav-link ${activeSection === 'letter-options' ? 'active' : ''}`}>Letter Options</a>
           </nav>
         </aside>
 
@@ -458,7 +634,7 @@ const AdminDashboard = () => {
               <span className="admin-pill">Deadline &lt; 48h</span>
             </div>
             {loading ? (
-              <p>Loading urgent requests...</p>
+              <LoadingSpinner message="Loading urgent requests..." />
             ) : urgentRequests.length === 0 ? (
               <p className="small-text">No urgent pending requests.</p>
             ) : (
@@ -521,7 +697,19 @@ const AdminDashboard = () => {
                   Based on current approvals, you are trending {completedLorCount}/{totalLorCount} completions this term.
                 </p>
               </div>
-              <motion.button className="primary-btn" onClick={handleExport} {...tapButton}>Download Report</motion.button>
+              <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap' }}>
+                <select
+                  value={exportFilter}
+                  onChange={(e) => setExportFilter(e.target.value)}
+                  className="form-input"
+                  style={{ flex: 1, minWidth: '140px' }}
+                >
+                  <option value="all">All Requests</option>
+                  <option value="pending">Pending Only</option>
+                  <option value="approved">Approved Only</option>
+                </select>
+                <motion.button className="primary-btn" onClick={handleExport} {...tapButton}>Download Report</motion.button>
+              </div>
             </div>
           </section>
 
@@ -563,7 +751,7 @@ const AdminDashboard = () => {
           ))}
         </div>
         {loading ? (
-          <p>Loading faculties...</p>
+          <LoadingSpinner message="Loading faculties..." />
         ) : (
           <div className="table-wrap admin-table-card">
             <table className="simple-table">
@@ -581,7 +769,9 @@ const AdminDashboard = () => {
               <tbody>
                 {filteredFaculties.length === 0 ? (
                   <tr>
-                    <td colSpan="7">No faculty accounts found.</td>
+                    <td colSpan="7" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
+                      {searchTerm ? 'No faculty match your search.' : 'No faculty accounts registered yet.'}
+                    </td>
                   </tr>
                 ) : (
                   filteredFaculties.map((faculty) => {
@@ -654,26 +844,32 @@ const AdminDashboard = () => {
                           </div>
                         </td>
                         <td>
-                          {faculty.approvalStatus === 'pending' ? (
-                            <div className="action-group">
-                              <button
-                                className="small-btn approve-btn"
-                                onClick={() => onApproveFaculty(faculty._id)}
-                                disabled={approvingId === faculty._id}
-                              >
-                                {approvingId === faculty._id ? '…' : 'Approve'}
-                              </button>
-                              <button
-                                className="small-btn danger-btn"
-                                onClick={() => onRejectFaculty(faculty._id)}
-                                disabled={rejectingId === faculty._id}
-                              >
-                                {rejectingId === faculty._id ? '…' : 'Reject'}
-                              </button>
-                            </div>
-                          ) : (
-                            <span className="muted-dash">—</span>
-                          )}
+                          <div className="action-group">
+                            {faculty.approvalStatus === 'pending' && (
+                              <>
+                                <button
+                                  className="small-btn approve-btn"
+                                  onClick={() => onApproveFaculty(faculty._id)}
+                                  disabled={approvingId === faculty._id}
+                                >
+                                  {approvingId === faculty._id ? '…' : 'Approve'}
+                                </button>
+                                <button
+                                  className="small-btn danger-btn"
+                                  onClick={() => onRejectFaculty(faculty._id)}
+                                  disabled={rejectingId === faculty._id}
+                                >
+                                  {rejectingId === faculty._id ? '…' : 'Reject'}
+                                </button>
+                              </>
+                            )}
+                            <button
+                              className="small-btn secondary-btn"
+                              onClick={() => openEditFaculty(faculty)}
+                            >
+                              Edit
+                            </button>
+                          </div>
                         </td>
                       </tr>
                     );
@@ -687,7 +883,7 @@ const AdminDashboard = () => {
         {/* ── Students Table ──────────────────────────────────── */}
         <h3 id="students" className="section-title">Students</h3>
         {loading ? (
-          <p>Loading students...</p>
+          <LoadingSpinner message="Loading students..." />
         ) : (
           <div className="table-wrap admin-table-card">
             <table className="simple-table">
@@ -705,7 +901,9 @@ const AdminDashboard = () => {
               <tbody>
                 {filteredStudents.length === 0 ? (
                   <tr>
-                    <td colSpan="7">No students found.</td>
+                    <td colSpan="7" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
+                      {searchTerm ? 'No students match your search.' : 'No students registered yet.'}
+                    </td>
                   </tr>
                 ) : (
                   filteredStudents.map((student) => (
@@ -741,7 +939,7 @@ const AdminDashboard = () => {
           ))}
         </div>
         {loading ? (
-          <p>Loading LOR requests...</p>
+          <LoadingSpinner message="Loading LOR requests..." />
         ) : (
           <div className="table-wrap admin-table-card">
             <table className="simple-table">
@@ -760,7 +958,9 @@ const AdminDashboard = () => {
               <tbody>
                 {filteredLorRequests.length === 0 ? (
                   <tr>
-                    <td colSpan="8">No LOR requests found.</td>
+                    <td colSpan="8" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
+                      {searchTerm ? 'No LOR requests match your search.' : 'No LOR requests have been submitted yet.'}
+                    </td>
                   </tr>
                 ) : (
                   filteredLorRequests.map((request) => (
@@ -859,8 +1059,66 @@ const AdminDashboard = () => {
           </div>
         )}
 
+        <LetterOptionsSection notify={notify} setError={setError} />
+
         </section>
       </div>
+
+      {/* ── Edit Faculty Modal ───────────────────────────────────── */}
+      <AnimatePresence>
+        {editFacultyTarget && (
+          <motion.div
+            style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.45)', zIndex: 100, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: '16px' }}
+            initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+            onClick={(e) => { if (e.target === e.currentTarget) setEditFacultyTarget(null); }}
+          >
+            <motion.div
+              style={{ background: 'var(--card-bg, #fff)', borderRadius: '10px', padding: '28px', width: '100%', maxWidth: '480px', boxShadow: '0 8px 32px rgba(0,0,0,0.18)' }}
+              initial={{ scale: 0.95, opacity: 0 }} animate={{ scale: 1, opacity: 1 }} exit={{ scale: 0.95, opacity: 0 }}
+              transition={{ duration: 0.18 }}
+            >
+              <h3 style={{ margin: '0 0 4px' }}>Edit Faculty Profile</h3>
+              <p style={{ margin: '0 0 20px', fontSize: '13px', color: 'var(--muted)' }}>{editFacultyTarget.name}</p>
+
+              <p style={{ margin: '0 0 14px', fontSize: '12px', color: 'var(--muted)', background: 'var(--meta-bg, #f8fafc)', padding: '8px 12px', borderRadius: '6px', borderLeft: '3px solid #c5a059' }}>
+                Changing the login email will sign out this faculty member immediately.
+              </p>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px' }}>
+                <div>
+                  <label className="form-label">Name</label>
+                  <input className="form-input" value={editFacultyForm.name} onChange={(e) => setEditFacultyForm((p) => ({ ...p, name: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Department</label>
+                  <input className="form-input" value={editFacultyForm.department} onChange={(e) => setEditFacultyForm((p) => ({ ...p, department: e.target.value }))} />
+                </div>
+                <div style={{ gridColumn: '1 / -1' }}>
+                  <label className="form-label">Login Email <span style={{ color: '#dc2626', fontSize: '11px' }}>(changes sign out faculty)</span></label>
+                  <input className="form-input" type="email" value={editFacultyForm.email} onChange={(e) => setEditFacultyForm((p) => ({ ...p, email: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">College Email</label>
+                  <input className="form-input" type="email" value={editFacultyForm.collegeEmail} onChange={(e) => setEditFacultyForm((p) => ({ ...p, collegeEmail: e.target.value }))} />
+                </div>
+                <div>
+                  <label className="form-label">Mobile</label>
+                  <input className="form-input" value={editFacultyForm.mobile} onChange={(e) => setEditFacultyForm((p) => ({ ...p, mobile: e.target.value }))} />
+                </div>
+              </div>
+
+              <div className="action-buttons" style={{ marginTop: '20px' }}>
+                <motion.button className="small-btn approve-btn" onClick={onSaveFacultyEdit} disabled={savingFacultyEdit} {...tapButton}>
+                  {savingFacultyEdit ? 'Saving...' : 'Save Changes'}
+                </motion.button>
+                <motion.button className="small-btn" onClick={() => setEditFacultyTarget(null)} disabled={savingFacultyEdit} {...tapButton}>
+                  Cancel
+                </motion.button>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </main>
   );
 };
