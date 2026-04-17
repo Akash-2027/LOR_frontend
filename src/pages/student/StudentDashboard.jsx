@@ -1,13 +1,33 @@
 import { useEffect, useRef, useState } from 'react';
+import { z } from 'zod';
 import { motion, AnimatePresence } from 'motion/react';
 import api from '../../lib/api.js';
 import useAuth from '../../hooks/useAuth.js';
 import { fadeUp, tapButton, staggerContainer, rowItem } from '../../lib/motionVariants.js';
+import LoadingSpinner from '../../components/LoadingSpinner.jsx';
+
+const ACHIEVEMENTS_MAX = 600;
+const LOR_REQ_MAX = 500;
+const PURPOSE_CUSTOM_MAX = 150;
+
+const lorRequestSchema = z.object({
+  facultyId:       z.string().min(1, 'Please select a faculty'),
+  subject:         z.string().min(1, 'Please select a subject'),
+  purpose:         z.string().min(3, 'Purpose is required').max(200, 'Purpose too long'),
+  targetUniversity:z.string().min(3, 'Target university must be at least 3 characters').max(100, 'University name too long'),
+  program:         z.string().min(2, 'Program must be at least 2 characters').max(100, 'Program name too long'),
+  dueDate:         z.string().min(1, 'Due date is required'),
+  achievements:    z.string().min(10, 'Achievements must be at least 10 characters').max(ACHIEVEMENTS_MAX, `Achievements cannot exceed ${ACHIEVEMENTS_MAX} characters`),
+  lorRequirements: z.string().min(10, 'LOR requirements must be at least 10 characters').max(LOR_REQ_MAX, `LOR requirements cannot exceed ${LOR_REQ_MAX} characters`),
+  documentName:    z.string().min(1, 'Please upload a document'),
+  documentData:    z.string().min(1, 'Please upload a document')
+});
 
 const initialForm = {
   facultyId: '',
   subject: '',
-  purpose: '',
+  purposeOption: '',
+  purposeCustom: '',
   targetUniversity: '',
   program: '',
   dueDate: '',
@@ -47,6 +67,17 @@ const formatStatusLabel = (status) => {
   return 'Pending';
 };
 
+const CharCounter = ({ value, max }) => {
+  const remaining = max - (value?.length || 0);
+  const isNear = remaining <= Math.floor(max * 0.15);
+  const isOver = remaining < 0;
+  return (
+    <span className="char-counter" style={{ color: isOver ? 'var(--error, #c0392b)' : isNear ? 'var(--warning, #e67e22)' : 'var(--muted)' }}>
+      {remaining < 0 ? `${Math.abs(remaining)} over limit` : `${remaining} chars left`}
+    </span>
+  );
+};
+
 const StudentDashboard = () => {
   const { user, logout } = useAuth();
   const hasLoadedRef = useRef(false);
@@ -54,6 +85,7 @@ const StudentDashboard = () => {
   const [facultyList, setFacultyList] = useState([]);
   const [requests, setRequests] = useState([]);
   const [form, setForm] = useState(initialForm);
+  const [lorConfig, setLorConfig] = useState({ purposes: [], programs: [] });
 
   const [loading, setLoading] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -62,6 +94,22 @@ const StudentDashboard = () => {
   const [success, setSuccess] = useState('');
 
   const totalRequests = requests.length;
+
+  // Compute final purpose value: if "Other" is selected, use custom text
+  const purposeValue = form.purposeOption === 'Other' ? form.purposeCustom.trim() : form.purposeOption;
+
+  const loadConfig = async () => {
+    try {
+      const res = await api.get('/lor/config');
+      const cfg = res.data.data || {};
+      setLorConfig({
+        purposes: cfg.purposes || [],
+        programs: cfg.programs || []
+      });
+    } catch {
+      // non-fatal — form still works with empty dropdowns
+    }
+  };
 
   const loadFacultyList = async () => {
     const facultyRes = await api.get('/lor/faculty-list');
@@ -90,6 +138,8 @@ const StudentDashboard = () => {
     setLoading(true);
     setErrors([]);
 
+    await loadConfig();
+
     try {
       const facultyWarnings = await loadFacultyList();
       if (facultyWarnings.length > 0) {
@@ -114,6 +164,12 @@ const StudentDashboard = () => {
     loadData();
   }, []);
 
+  useEffect(() => {
+    if (!success) return;
+    const timer = setTimeout(() => setSuccess(''), 4000);
+    return () => clearTimeout(timer);
+  }, [success]);
+
   const handleChange = (key) => (event) => {
     const value = event.target.value;
     setForm((prev) => ({ ...prev, [key]: value }));
@@ -129,6 +185,20 @@ const StudentDashboard = () => {
     const file = event.target.files?.[0];
     if (!file) {
       setForm((prev) => ({ ...prev, documentName: '', documentData: '' }));
+      return;
+    }
+
+    const ALLOWED_MIME = ['image/jpeg', 'image/jpg', 'image/png', 'application/pdf'];
+    if (!ALLOWED_MIME.includes(file.type)) {
+      setErrors(['Only JPG, PNG, or PDF files are allowed.']);
+      event.target.value = '';
+      return;
+    }
+
+    const MAX_SIZE_MB = 5;
+    if (file.size > MAX_SIZE_MB * 1024 * 1024) {
+      setErrors([`File is too large. Maximum allowed size is ${MAX_SIZE_MB} MB.`]);
+      event.target.value = '';
       return;
     }
 
@@ -148,25 +218,29 @@ const StudentDashboard = () => {
     setErrors([]);
     setSuccess('');
 
-    if (!form.facultyId) {
-      setErrors(['Please select a faculty before submitting your request.']);
+    const resolvedProgram = form.program === '__custom__' ? (form.programCustom || '').trim() : form.program;
+    const payload = { ...form, purpose: purposeValue, program: resolvedProgram };
+
+    if (form.purposeOption === 'Other' && !form.purposeCustom.trim()) {
+      setErrors(['Please describe your purpose.']);
       return;
     }
 
-    if (!form.subject) {
-      setErrors(['Please select a subject for this faculty.']);
+    if (form.program === '__custom__' && !resolvedProgram) {
+      setErrors(['Please specify the program name.']);
       return;
     }
 
-    if (!form.documentName || !form.documentData) {
-      setErrors(['Please upload marksheet or ID card before submitting your request.']);
+    const validation = lorRequestSchema.safeParse(payload);
+    if (!validation.success) {
+      setErrors(validation.error.errors.map((e) => e.message));
       return;
     }
 
     setSubmitting(true);
 
     try {
-      await api.post('/lor/student/requests', form);
+      await api.post('/lor/student/requests', { ...payload });
       setSuccess('LOR request submitted successfully.');
       setForm((prev) => ({
         ...initialForm,
@@ -263,11 +337,41 @@ const StudentDashboard = () => {
           <h4 className="section-title">2. Academic Target</h4>
           <label className="form-label">Target University</label>
           <p className="small-text">Required</p>
-          <input className="form-input" value={form.targetUniversity} onChange={handleChange('targetUniversity')} required />
+          <input className="form-input" value={form.targetUniversity} onChange={handleChange('targetUniversity')} maxLength={100} required />
 
           <label className="form-label">Program</label>
-          <p className="small-text">Required</p>
-          <input className="form-input" value={form.program} onChange={handleChange('program')} required />
+          <p className="small-text">
+            Required: Select from common options or type a custom program.
+          </p>
+          {lorConfig.programs.length > 0 ? (
+            <select
+              className="form-input"
+              value={form.program}
+              onChange={handleChange('program')}
+              required
+            >
+              <option value="">Select program</option>
+              {lorConfig.programs.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+              <option value="__custom__">Other (specify below)</option>
+            </select>
+          ) : (
+            <input className="form-input" value={form.program} onChange={handleChange('program')} maxLength={100} required />
+          )}
+          {form.program === '__custom__' && (
+            <>
+              <label className="form-label">Specify Program</label>
+              <input
+                className="form-input"
+                placeholder="e.g. M.Sc. Data Science"
+                value={form.programCustom || ''}
+                onChange={(e) => setForm((prev) => ({ ...prev, programCustom: e.target.value }))}
+                maxLength={100}
+                required
+              />
+            </>
+          )}
 
           <label className="form-label">Due Date</label>
           <p className="small-text">Required</p>
@@ -275,16 +379,70 @@ const StudentDashboard = () => {
 
           <h4 className="section-title">3. Student Profile</h4>
           <label className="form-label">Purpose of Letter</label>
-          <p className="small-text">Required: Briefly explain why you need this LOR.</p>
-          <input className="form-input" value={form.purpose} onChange={handleChange('purpose')} required />
+          <p className="small-text">Required: Select the primary reason for requesting this LOR.</p>
+          {lorConfig.purposes.length > 0 ? (
+            <select
+              className="form-input"
+              value={form.purposeOption}
+              onChange={handleChange('purposeOption')}
+              required
+            >
+              <option value="">Select purpose</option>
+              {lorConfig.purposes.map((p) => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+          ) : (
+            <input className="form-input" value={form.purposeOption} onChange={handleChange('purposeOption')} maxLength={200} required />
+          )}
+          {form.purposeOption === 'Other' && (
+            <>
+              <label className="form-label">Describe your purpose</label>
+              <div className="input-with-counter">
+                <input
+                  className="form-input"
+                  placeholder="Briefly describe why you need this LOR"
+                  value={form.purposeCustom}
+                  onChange={handleChange('purposeCustom')}
+                  maxLength={PURPOSE_CUSTOM_MAX}
+                  required
+                />
+                <CharCounter value={form.purposeCustom} max={PURPOSE_CUSTOM_MAX} />
+              </div>
+            </>
+          )}
 
           <label className="form-label">Your Achievements</label>
-          <p className="small-text">Required</p>
-          <textarea className="form-input textarea-input" value={form.achievements} onChange={handleChange('achievements')} required />
+          <p className="small-text">
+            Required: List your academic achievements, projects, or awards relevant to this application.
+            Keep it concise — faculty may edit this before approval.
+          </p>
+          <div className="input-with-counter">
+            <textarea
+              className="form-input textarea-input"
+              value={form.achievements}
+              onChange={handleChange('achievements')}
+              maxLength={ACHIEVEMENTS_MAX}
+              required
+            />
+            <CharCounter value={form.achievements} max={ACHIEVEMENTS_MAX} />
+          </div>
 
           <label className="form-label">What should be included in LOR?</label>
-          <p className="small-text">Required</p>
-          <textarea className="form-input textarea-input" value={form.lorRequirements} onChange={handleChange('lorRequirements')} required />
+          <p className="small-text">
+            Required: Mention specific qualities or experiences you want highlighted.
+            Faculty may refine this content before approval.
+          </p>
+          <div className="input-with-counter">
+            <textarea
+              className="form-input textarea-input"
+              value={form.lorRequirements}
+              onChange={handleChange('lorRequirements')}
+              maxLength={LOR_REQ_MAX}
+              required
+            />
+            <CharCounter value={form.lorRequirements} max={LOR_REQ_MAX} />
+          </div>
 
           <h4 className="section-title">4. Supporting Document</h4>
           <label className="form-label">Document Type</label>
@@ -295,7 +453,7 @@ const StudentDashboard = () => {
           </select>
 
           <label className="form-label">Upload Marksheet / ID Card</label>
-          <p className="small-text">Required: JPG, PNG, or PDF.</p>
+          <p className="small-text">Required: JPG, PNG, or PDF. Max 5 MB.</p>
           <input className="form-input" type="file" accept="image/*,.pdf" onChange={handleDocument} required />
           {form.documentName && <p className="small-text">Selected: {form.documentName}</p>}
 
@@ -307,7 +465,7 @@ const StudentDashboard = () => {
         <h3 className="section-title">My Requests</h3>
 
         {loading ? (
-          <p>Loading requests...</p>
+          <LoadingSpinner message="Loading requests..." />
         ) : (
           <div className="table-wrap">
             <table className="simple-table">
@@ -325,7 +483,9 @@ const StudentDashboard = () => {
               <tbody>
                 {requests.length === 0 ? (
                   <tr>
-                    <td colSpan="7">No requests yet.</td>
+                    <td colSpan="7" style={{ textAlign: 'center', color: 'var(--muted)', padding: '2rem' }}>
+                      You have not submitted any LOR requests yet. Use the form above to get started.
+                    </td>
                   </tr>
                 ) : (
                   requests.map((request) => (
@@ -334,7 +494,11 @@ const StudentDashboard = () => {
                       <td>{request.subject || '-'}</td>
                       <td>{request.targetUniversity || '-'}</td>
                       <td>{request.program || '-'}</td>
-                      <td>{formatStatusLabel(request.status)}</td>
+                      <td>
+                        <span className={`status-badge status-${request.status}`}>
+                          {formatStatusLabel(request.status)}
+                        </span>
+                      </td>
                       <td>{request.facultyRemark || '-'}</td>
                       <td>
                         {request.status === 'approved' ? (
