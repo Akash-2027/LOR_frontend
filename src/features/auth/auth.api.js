@@ -22,3 +22,6 @@ export const deleteFaculty = (facultyId) => api.delete(`/auth/admin/faculties/${
 export const cancelLorRequest = (requestId) => api.patch(`/lor/admin/${requestId}/cancel`);
 export const reassignLorRequest = (requestId, facultyId) => api.patch(`/lor/admin/${requestId}/reassign`, { facultyId });
 export const deleteLorRequest = (requestId) => api.delete(`/lor/admin/${requestId}`);
+
+export const updateFacultyProfile = (payload) => api.patch('/auth/faculty/profile', payload);
+export const adminUpdateFacultyProfile = (facultyId, payload) => api.patch(`/auth/admin/faculties/${facultyId}/profile`, payload);
