@@ -79,19 +79,6 @@ const AuthGateway = () => {
   const [success, setSuccess] = useState('');
   const [form, setForm] = useState(emptyForm);
 
-  // Fetch CSRF token on page load — must be before any early returns (Rules of Hooks)
-  useEffect(() => {
-    const fetchCsrfToken = async () => {
-      try {
-        await api.get('/csrf-token');
-        // Token is automatically stored in localStorage by the response interceptor
-      } catch (err) {
-        console.error('Failed to fetch CSRF token:', err);
-      }
-    };
-    fetchCsrfToken();
-  }, []);
-
   if (auth.isAuthenticated) {
     return <Navigate to={getDashboardPath(auth.role)} replace />;
   }

@@ -1,5 +1,4 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
-import api from '../lib/api.js';
 
 export const AuthContext = createContext(null);
 
@@ -54,18 +53,6 @@ const AuthProvider = ({ children }) => {
       logout(); // malformed token — clear it
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // On mount: fetch CSRF token for form submissions
-  useEffect(() => {
-    const fetchCsrfToken = async () => {
-      try {
-        await api.get('/csrf-token');
-      } catch (error) {
-        console.error('Failed to fetch CSRF token:', error);
-      }
-    };
-    fetchCsrfToken();
-  }, []);
 
   const value = useMemo(
     () => ({
