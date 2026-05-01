@@ -1,5 +1,4 @@
 import { createContext, useCallback, useEffect, useMemo, useState } from 'react';
-import api from '../lib/api.js';
 
 export const AuthContext = createContext(null);
 
@@ -55,24 +54,6 @@ const AuthProvider = ({ children }) => {
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // On mount: fetch CSRF token for form submissions
-  useEffect(() => {
-    const fetchCsrfToken = async () => {
-      try {
-        const response = await api.get('/csrf-token');
-        // Ensure token is stored from response body
-        if (response.data?.csrfToken && response.data?.sessionId) {
-          localStorage.setItem('lor_csrf_token', response.data.csrfToken);
-          localStorage.setItem('lor_session_id', response.data.sessionId);
-        }
-      } catch (error) {
-        console.error('Failed to fetch CSRF token:', error);
-        // Retry after 2 seconds
-        setTimeout(fetchCsrfToken, 2000);
-      }
-    };
-    fetchCsrfToken();
-  }, []);
   const value = useMemo(
     () => ({
       token,
