@@ -269,6 +269,44 @@ const FacultyDashboard = () => {
     }
   };
 
+  const openSupportingDocument = (dataUri, fileName = 'document') => {
+    try {
+      if (!dataUri || !dataUri.startsWith('data:')) {
+        setErrors(['Document is unavailable for this request.']);
+        return;
+      }
+      const match = dataUri.match(/^data:([^;]+);base64,(.+)$/);
+      if (!match) {
+        setErrors(['Document format is invalid.']);
+        return;
+      }
+
+      const mimeType = match[1];
+      const base64 = match[2];
+      const binary = atob(base64);
+      const bytes = new Uint8Array(binary.length);
+      for (let i = 0; i < binary.length; i += 1) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: mimeType });
+      const url = URL.createObjectURL(blob);
+      const opened = window.open(url, '_blank', 'noopener,noreferrer');
+      if (!opened) {
+        // Popup blockers sometimes prevent window.open. Fallback download.
+        const link = document.createElement('a');
+        link.href = url;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (error) {
+      setErrors(['Unable to open document. Please try again.']);
+    }
+  };
+
   return (
     <main className="dashboard-page">
       <section className="simple-card">
@@ -480,7 +518,7 @@ const FacultyDashboard = () => {
                                   <p className="req-detail-value">
                                     {request.documentType || '-'}
                                     {request.documentData && (
-                                      <> · <a href={request.documentData} target="_blank" rel="noreferrer">View</a></>
+                                      <> · <button type="button" className="small-btn" onClick={() => openSupportingDocument(request.documentData, request.documentName || 'document')}>View</button></>
                                     )}
                                   </p>
                                 </div>
