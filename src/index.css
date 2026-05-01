@@ -870,7 +870,7 @@ html {
 }
 
 .req-expand-panel.open {
-  max-height: 600px;
+  max-height: none;
   padding: 18px 20px;
   opacity: 1;
   border-top: 1px dashed rgba(177, 179, 169, 0.5);
